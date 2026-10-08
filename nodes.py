@@ -44,6 +44,7 @@ SIZE_CHOICES = [
 QUALITY_CHOICES = ["auto", "low", "medium", "high"]
 BACKGROUND_CHOICES = ["auto", "opaque", "transparent"]
 MODE_CHOICES = ["auto", "generations", "edits", "chat"]
+PROVIDER_CHOICES = ["自动", "官方", "中转站"]
 
 
 # --------------------------------------------------------------------------- #
@@ -200,42 +201,54 @@ def _extract_images_from_response(payload, session, timeout):
 # 主节点
 # --------------------------------------------------------------------------- #
 class RelayImageNode:
-    """调用 OpenAI 兼容图像接口（中转站 / one-api / new-api / 自建网关）。"""
+    """统一图像节点：同一个节点里可以填「官方 comfy.org API Key」或「中转站 Key」，
+    按「填了哪个」自动决定走官方代理还是走中转站。
+
+    官方通道 = https://api.comfy.org/proxy/openai/images/{generations,edits}（X-API-KEY 认证）
+    中转通道 = {relay_base_url}/images/{generations,edits} 或 {relay_base_url}/chat/completions
+    """
+
+    OFFICIAL_BASE = "https://api.comfy.org"
 
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "base_url": ("STRING", {
-                    "default": "http://127.0.0.1:8000/v1",
-                    "multiline": False,
-                    "tooltip": "中转站的 OpenAI 兼容根地址，要带 /v1。例如 http://127.0.0.1:8000/v1",
+                "provider": (PROVIDER_CHOICES, {
+                    "default": "自动",
+                    "tooltip": "自动：填了官方 Key 走官方、填了中转 Key 走中转站；也可强制指定",
                 }),
-                "api_key": ("STRING", {
+                "official_api_key": ("STRING", {
                     "default": "", "multiline": False,
-                    "tooltip": "中转站令牌，例如 sk-relay-xxxxxx。只存在本机工作流里，不会上传。",
+                    "tooltip": "ComfyUI 平台(platform.comfy.org)的 API Key。填了就走官方通道",
+                }),
+                "relay_api_key": ("STRING", {
+                    "default": "", "multiline": False,
+                    "tooltip": "中转站令牌(sk-xxx)。填了就走中转站",
                 }),
                 "model": ("STRING", {
                     "default": "gpt-image-2", "multiline": False,
-                    "tooltip": "中转站支持的模型别名，如 gpt-image-2 / nano-banana-2 / nano-banana-pro",
+                    "tooltip": "模型名，如 gpt-image-2 / gpt-image-2.5-flare / nano-banana-2",
                 }),
                 "prompt": ("STRING", {"multiline": True, "default": "", "dynamicPrompts": True}),
                 "api_mode": (MODE_CHOICES, {
                     "default": "auto",
-                    "tooltip": "auto：无参考图走 generations、有图走 edits（失败自动降级 chat）；也可手动锁定",
+                    "tooltip": "auto：无参考图走文生图、有图走图生图；chat 仅中转站支持",
                 }),
                 "size": (SIZE_CHOICES, {"default": "auto"}),
                 "quality": (QUALITY_CHOICES, {"default": "auto"}),
                 "background": (BACKGROUND_CHOICES, {"default": "auto"}),
-                "n": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1,
-                              "tooltip": "生成几张。注意多数网关只返回第 1 张"}),
-                "timeout": ("INT", {"default": 300, "min": 10, "max": 3600, "step": 10,
-                                    "tooltip": "单次请求超时秒数"}),
+                "n": ("INT", {"default": 1, "min": 1, "max": 8, "step": 1}),
+                "timeout": ("INT", {"default": 300, "min": 10, "max": 3600, "step": 10}),
             },
             "optional": {
+                "relay_base_url": ("STRING", {
+                    "default": "https://xianai.cc/v1", "multiline": False,
+                    "tooltip": "中转站地址（走中转站时用），要带 /v1",
+                }),
                 "image": ("IMAGE", {"tooltip": "参考图；传 batch 即为多图（编辑 / 融合）"}),
-                "mask": ("MASK", {"tooltip": "局部重绘掩码，白色区域会被替换（仅 edits 模式）"}),
-                "verify_ssl": ("BOOLEAN", {"default": True, "tooltip": "本地 http 网关可不管；https 自签证书时关掉"}),
+                "mask": ("MASK", {"tooltip": "局部重绘掩码，白色区域会被替换"}),
+                "verify_ssl": ("BOOLEAN", {"default": True}),
             },
         }
 
@@ -245,27 +258,116 @@ class RelayImageNode:
     CATEGORY = CATEGORY
 
     # ------------------------------------------------------------------ #
-    def run(self, base_url, api_key, model, prompt, api_mode, size, quality,
-            background, n, timeout, image=None, mask=None, verify_ssl=True):
+    def run(self, provider, official_api_key, relay_api_key, model, prompt, api_mode,
+            size, quality, background, n, timeout,
+            relay_base_url="https://xianai.cc/v1", image=None, mask=None, verify_ssl=True):
 
-        base = (base_url or "").strip().rstrip("/")
-        if not base:
-            raise ValueError("base_url 不能为空，例如 http://127.0.0.1:8000/v1")
+        off_key = (official_api_key or "").strip()
+        rel_key = (relay_api_key or "").strip()
+        base = (relay_base_url or "").strip().rstrip("/")
+
+        if provider == "官方":
+            use_official = True
+        elif provider == "中转站":
+            use_official = False
+        else:  # 自动
+            if rel_key:
+                use_official = False
+            elif off_key:
+                use_official = True
+            else:
+                raise ValueError(
+                    "两个 Key 都没填：请在 official_api_key 填 comfy.org 的 Key，"
+                    "或在 relay_api_key 填中转站令牌")
+
+        if not use_official and not rel_key:
+            raise ValueError("走中转站但 relay_api_key 是空的")
+        if use_official and not off_key:
+            raise ValueError("走官方通道但 official_api_key 是空的")
         if not prompt and image is None:
             raise ValueError("prompt 与 image 至少要有一个")
 
         session = requests.Session()
         session.verify = bool(verify_ssl)
-        headers = {"Authorization": f"Bearer {api_key}", "User-Agent": "ComfyUI-RelayImage/1.0"}
-        if api_key:
-            headers["x-api-key"] = api_key  # 有些网关用这个头
 
-        # 参考图 -> png bytes 列表
+        # 参考图 -> png bytes
         ref_imgs = []
         if image is not None:
             for i in range(image.shape[0]):
                 ref_imgs.append(_tensor_to_png_bytes(image[i])[0])
         mask_bytes = _mask_to_png_bytes(mask) if mask is not None else None
+
+        if use_official:
+            return self._run_official(session, off_key, model, prompt, api_mode, size,
+                                      quality, background, n, timeout, ref_imgs, mask_bytes)
+        return self._run_relay(session, rel_key, base, model, prompt, api_mode, size,
+                               quality, background, n, timeout, ref_imgs, mask_bytes)
+
+    # ------------------------------------------------------------------ #
+    def _run_official(self, session, api_key, model, prompt, api_mode, size, quality,
+                      background, n, timeout, ref_imgs, mask_bytes):
+        """官方 comfy.org 代理——接口与官方 OpenAIGPTImage* 节点完全一致。"""
+        headers = {"X-API-KEY": api_key, "User-Agent": "ComfyUI-RelayImage/1.0"}
+        common = {"model": model, "prompt": prompt, "n": n, "moderation": "low"}
+        if quality != "auto":
+            common["quality"] = quality
+        if background != "auto":
+            common["background"] = background
+        if size != "auto":
+            common["size"] = size
+
+        errors = []
+        want_edits = bool(ref_imgs) and api_mode in ("auto", "edits")
+
+        if want_edits:
+            url = f"{self.OFFICIAL_BASE}/proxy/openai/images/edits"
+            data = {k: str(v) for k, v in common.items()}
+            files = []
+            for i, b in enumerate(ref_imgs):
+                key = "image" if len(ref_imgs) == 1 else "image[]"
+                files.append((key, (f"image_{i}.png", b, "image/png")))
+            if mask_bytes:
+                files.append(("mask", ("mask.png", mask_bytes, "image/png")))
+            try:
+                r = session.post(url, headers=headers, data=data, files=files, timeout=timeout)
+                if r.status_code >= 400:
+                    raise RuntimeError(_parse_error(r, r.text))
+                imgs, note = _extract_images_from_response(r.json(), session, timeout)
+                if imgs:
+                    return self._pack(imgs, f"官方API | edits OK | {note} | {len(ref_imgs)} 张参考图")
+                errors.append(f"官方 edits 未返回图片: {r.text[:200]}")
+            except Exception as e:
+                errors.append(f"官方 edits 失败: {e}")
+            if api_mode == "edits":
+                raise RuntimeError("官方 edits 调用失败 —— " + " ; ".join(errors))
+
+        # 文生图
+        url = f"{self.OFFICIAL_BASE}/proxy/openai/images/generations"
+        try:
+            r = session.post(url, headers={**headers, "Content-Type": "application/json"},
+                             data=json.dumps(common, ensure_ascii=False).encode("utf-8"),
+                             timeout=timeout)
+            if r.status_code >= 400:
+                raise RuntimeError(_parse_error(r, r.text))
+            imgs, note = _extract_images_from_response(r.json(), session, timeout)
+            if imgs:
+                return self._pack(imgs, f"官方API | generations OK | {note}")
+            errors.append(f"官方 generations 未返回图片: {r.text[:200]}")
+        except Exception as e:
+            errors.append(f"官方 generations 失败: {e}")
+
+        raise RuntimeError("官方通道调用失败 —— " + " ; ".join(errors)
+                           + "\n（检查 official_api_key 是否正确、平台是否有余额）")
+
+    # ------------------------------------------------------------------ #
+    def _run_relay(self, session, api_key, base, model, prompt, api_mode, size, quality,
+                   background, n, timeout, ref_imgs, mask_bytes):
+        if not base:
+            raise ValueError("走中转站时 relay_base_url 不能为空，例如 https://xianai.cc/v1")
+
+        headers = {"Authorization": f"Bearer {api_key}", "User-Agent": "ComfyUI-RelayImage/1.0"}
+        if api_key:
+            headers["x-api-key"] = api_key
 
         mode = api_mode
         if mode == "auto":
@@ -273,7 +375,7 @@ class RelayImageNode:
 
         errors = []
 
-        # ---------------- 1) edits（multipart） ---------------- #
+        # 1) edits（multipart）
         if mode == "edits":
             if not ref_imgs:
                 raise ValueError("api_mode=edits 需要接一张参考图")
@@ -300,14 +402,14 @@ class RelayImageNode:
                     raise RuntimeError(_parse_error(r, r.text))
                 imgs, note = _extract_images_from_response(r.json(), session, timeout)
                 if imgs:
-                    return self._pack(imgs, f"edits OK | {note} | {len(ref_imgs)} 张参考图")
+                    return self._pack(imgs, f"中转站 | edits OK | {note} | {len(ref_imgs)} 张参考图")
                 errors.append(f"edits 未返回图片: {r.text[:200]}")
             except Exception as e:
                 errors.append(f"edits 失败: {e}")
             if api_mode == "edits":
                 raise RuntimeError("edits 调用失败 —— " + " ; ".join(errors))
 
-        # ---------------- 2) generations（json 文生图） ---------------- #
+        # 2) generations
         if mode in ("generations", "auto"):
             url = f"{base}/images/generations"
             body = {"model": model, "prompt": prompt, "n": n, "response_format": "b64_json"}
@@ -324,14 +426,14 @@ class RelayImageNode:
                     raise RuntimeError(_parse_error(r, r.text))
                 imgs, note = _extract_images_from_response(r.json(), session, timeout)
                 if imgs:
-                    return self._pack(imgs, f"generations OK | {note}")
+                    return self._pack(imgs, f"中转站 | generations OK | {note}")
                 errors.append(f"generations 未返回图片: {r.text[:200]}")
             except Exception as e:
                 errors.append(f"generations 失败: {e}")
             if api_mode == "generations" or (api_mode == "auto" and not ref_imgs):
                 raise RuntimeError("generations 调用失败 —— " + " ; ".join(errors))
 
-        # ---------------- 3) chat/completions（多模态，nano-banana 类） ---------------- #
+        # 3) chat/completions（多模态，nano-banana 类）
         url = f"{base}/chat/completions"
         content = [{"type": "text", "text": prompt}]
         for b in ref_imgs:
@@ -346,13 +448,13 @@ class RelayImageNode:
             payload = r.json()
             imgs, note = _extract_images_from_response(payload, session, timeout)
             if imgs:
-                return self._pack(imgs, f"chat OK | {note} | {len(ref_imgs)} 张参考图")
+                return self._pack(imgs, f"中转站 | chat OK | {note} | {len(ref_imgs)} 张参考图")
             txt = payload.get("_relay_text", "")
             errors.append("chat 未返回图片" + (f"，模型文本回复: {txt[:200]}" if txt else ""))
         except Exception as e:
             errors.append(f"chat 失败: {e}")
 
-        raise RuntimeError("三种调用方式都没拿到图片 —— " + " ; ".join(errors))
+        raise RuntimeError("中转站三种调用方式都没拿到图片 —— " + " ; ".join(errors))
 
     # ------------------------------------------------------------------ #
     @staticmethod
@@ -423,16 +525,18 @@ NODE_DISPLAY_NAME_MAPPINGS = {
 # --------------------------------------------------------------------------- #
 # 通道路由：一个节点决定整条工作流走哪条路
 # --------------------------------------------------------------------------- #
-CHANNEL_CHOICES = ["自动", "中转站", "官方API", "本地Qwen"]
+CHANNEL_CHOICES = ["自动", "官方", "中转站", "本地Qwen"]
 
 
 class RelayChannelRouter:
-    """根据「有没有填中转 key」自动决定走中转站还是官方 API，免去手拨开关。
+    """配置中心：在一处填官方 Key / 中转 Key，其余 7 个统一图像节点自动复用。
 
     输出：
-        use_online : 接 ComfyUI 里「在线/本地」总开关的 switch
-        use_relay  : 接「官方/中转站」通道开关的 switch
-        api_key / base_url / model : 直接接到 Relay Image 节点对应输入（覆盖其 widget）
+        use_online        : 接「在线 / 本地」总开关的 switch
+        official_api_key  : 接 Relay Image 节点的 official_api_key
+        relay_api_key     : 接 Relay Image 节点的 relay_api_key
+        relay_base_url    : 接 Relay Image 节点的 relay_base_url
+        model             : 接 Relay Image 节点的 model
     """
 
     @classmethod
@@ -441,51 +545,65 @@ class RelayChannelRouter:
             "required": {
                 "mode": (CHANNEL_CHOICES, {
                     "default": "自动",
-                    "tooltip": "自动：填了中转 key 就走中转站，留空就走官方 API",
+                    "tooltip": "自动：填了中转 key 走中转站、填了官方 key 走官方；也可强制指定",
+                }),
+                "official_api_key": ("STRING", {
+                    "default": "", "multiline": False,
+                    "tooltip": "ComfyUI 平台(platform.comfy.org)的 API Key —— 走官方通道时用",
                 }),
                 "relay_api_key": ("STRING", {
                     "default": "", "multiline": False,
-                    "tooltip": "中转站令牌（如 xianai.cc 的 sk-xxx）。填了它 = 走中转站；留空 = 走官方",
+                    "tooltip": "中转站令牌 sk-xxx（如 xianai.cc）—— 走中转站时用",
                 }),
                 "relay_base_url": ("STRING", {
                     "default": "https://xianai.cc/v1", "multiline": False,
                     "tooltip": "中转站地址，要带 /v1",
                 }),
-                "relay_model": ("STRING", {
+                "model": ("STRING", {
                     "default": "gpt-image-2", "multiline": False,
-                    "tooltip": "中转站上的模型名，如 gpt-image-2 / nano-banana-2",
+                    "tooltip": "模型名：官方用 gpt-image-2 / gpt-image-2.5-flare 等；中转站用其支持的别名",
                 }),
             }
         }
 
-    RETURN_TYPES = ("BOOLEAN", "BOOLEAN", "STRING", "STRING", "STRING")
-    RETURN_NAMES = ("use_online", "use_relay", "api_key", "base_url", "model")
+    RETURN_TYPES = ("BOOLEAN", "STRING", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("use_online", "official_api_key", "relay_api_key", "relay_base_url", "model")
     FUNCTION = "run"
     CATEGORY = CATEGORY
 
-    def run(self, mode, relay_api_key, relay_base_url, relay_model):
-        key = (relay_api_key or "").strip()
-        has_key = len(key) > 0
+    def run(self, mode, official_api_key, relay_api_key, relay_base_url, model):
+        off = (official_api_key or "").strip()
+        rel = (relay_api_key or "").strip()
+        base = (relay_base_url or "").strip().rstrip("/")
+        mdl = (model or "").strip()
 
-        if mode == "自动":
-            use_relay = has_key
-            use_online = True
+        if mode == "官方":
+            use_online, off_out, rel_out = True, off, ""
+            where = "官方API(comfy.org)"
+            if not off:
+                where = "官方API 但未填 Key ⚠"
         elif mode == "中转站":
-            use_relay, use_online = True, True
-        elif mode == "官方API":
-            use_relay, use_online = False, True
-        else:  # 本地Qwen
-            use_relay, use_online = False, False
+            use_online, off_out, rel_out = True, "", rel
+            where = f"中转站({base})"
+            if not rel:
+                where = "中转站 但未填 Key ⚠"
+        elif mode == "本地Qwen":
+            use_online, off_out, rel_out = False, "", ""
+            where = "本地Qwen2.1"
+        else:  # 自动
+            if rel:
+                off_out, rel_out = "", rel
+                where = f"中转站({base})"
+            elif off:
+                off_out, rel_out = off, ""
+                where = "官方API(comfy.org)"
+            else:
+                off_out, rel_out = "", ""
+                where = "未填任何 Key ⚠（请填 official_api_key 或 relay_api_key）"
+            use_online = True
 
-        # 只有真正走中转时才把 key 透传下去，避免误用
-        out_key = key if use_relay else ""
-        out_base = (relay_base_url or "").strip().rstrip("/") if use_relay else ""
-        out_model = (relay_model or "").strip() if use_relay else ""
-
-        where = "中转站(%s)" % (out_base or "-") if use_relay else ("官方API(comfy.org)" if use_online else "本地Qwen2.1")
-        print(f"[RelayChannelRouter] mode={mode} 有key={has_key} -> 走 {where}")
-
-        return (use_online, use_relay, out_key, out_base, out_model)
+        print(f"[RelayChannelRouter] mode={mode} 官方key={bool(off)} 中转key={bool(rel)} -> 走 {where}")
+        return (use_online, off_out, rel_out, base, mdl)
 
 
 NODE_CLASS_MAPPINGS["RelayChannelRouter"] = RelayChannelRouter
