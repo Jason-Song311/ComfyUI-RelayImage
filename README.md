@@ -49,6 +49,35 @@ git clone https://github.com/<你的账号>/ComfyUI-RelayImage.git
 
 拉取 `{base_url}/models`，把中转站支持的模型别名打印出来，省得猜模型名。
 
+### Relay 通道路由（填了中转 key 就走中转，否则走官方）
+
+一个节点决定整条工作流走哪条路，**免去手拨开关**：
+
+| 参数 | 说明 |
+|---|---|
+| `mode` | `自动`（默认）/ `中转站` / `官方API` / `本地Qwen` |
+| `relay_api_key` | 中转站令牌。**填了 → 走中转站；留空 → 走官方** |
+| `relay_base_url` | 中转站地址，如 `https://xianai.cc/v1` |
+| `relay_model` | 模型名，如 `gpt-image-2` |
+
+输出（接到开关和 Relay Image 节点上）：
+
+| 输出 | 接到哪 |
+|---|---|
+| `use_online` (BOOLEAN) | 「在线 / 本地」总开关的 `switch` |
+| `use_relay` (BOOLEAN) | 「官方 / 中转站」通道开关的 `switch` |
+| `api_key` / `base_url` / `model` (STRING) | Relay Image 节点的对应输入 |
+
+自动模式的行为：
+
+| 你填的 | 实际走的 |
+|---|---|
+| `relay_api_key` 有值 | 中转站 |
+| `relay_api_key` 留空 | 官方 API |
+
+运行日志会打印 `[RelayChannelRouter] mode=自动 有key=True -> 走 中转站(...)`，方便确认。
+
+
 ## 三种调用方式
 
 | `api_mode` | 请求 | 用途 |

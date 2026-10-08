@@ -410,11 +410,84 @@ class RelayModelList:
 NODE_CLASS_MAPPINGS = {
     "RelayImageNode": RelayImageNode,
     "RelayModelList": RelayModelList,
+    "RelayChannelRouter": None,   # 由下方定义后回填
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "RelayImageNode": "Relay Image (中转站/自定义 OpenAI 图像接口)",
     "RelayModelList": "Relay Model List (列出网关模型)",
+    "RelayChannelRouter": "Relay 通道路由 (填了中转key就走中转，否则走官方)",
 }
+
+
+# --------------------------------------------------------------------------- #
+# 通道路由：一个节点决定整条工作流走哪条路
+# --------------------------------------------------------------------------- #
+CHANNEL_CHOICES = ["自动", "中转站", "官方API", "本地Qwen"]
+
+
+class RelayChannelRouter:
+    """根据「有没有填中转 key」自动决定走中转站还是官方 API，免去手拨开关。
+
+    输出：
+        use_online : 接 ComfyUI 里「在线/本地」总开关的 switch
+        use_relay  : 接「官方/中转站」通道开关的 switch
+        api_key / base_url / model : 直接接到 Relay Image 节点对应输入（覆盖其 widget）
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "mode": (CHANNEL_CHOICES, {
+                    "default": "自动",
+                    "tooltip": "自动：填了中转 key 就走中转站，留空就走官方 API",
+                }),
+                "relay_api_key": ("STRING", {
+                    "default": "", "multiline": False,
+                    "tooltip": "中转站令牌（如 xianai.cc 的 sk-xxx）。填了它 = 走中转站；留空 = 走官方",
+                }),
+                "relay_base_url": ("STRING", {
+                    "default": "https://xianai.cc/v1", "multiline": False,
+                    "tooltip": "中转站地址，要带 /v1",
+                }),
+                "relay_model": ("STRING", {
+                    "default": "gpt-image-2", "multiline": False,
+                    "tooltip": "中转站上的模型名，如 gpt-image-2 / nano-banana-2",
+                }),
+            }
+        }
+
+    RETURN_TYPES = ("BOOLEAN", "BOOLEAN", "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("use_online", "use_relay", "api_key", "base_url", "model")
+    FUNCTION = "run"
+    CATEGORY = CATEGORY
+
+    def run(self, mode, relay_api_key, relay_base_url, relay_model):
+        key = (relay_api_key or "").strip()
+        has_key = len(key) > 0
+
+        if mode == "自动":
+            use_relay = has_key
+            use_online = True
+        elif mode == "中转站":
+            use_relay, use_online = True, True
+        elif mode == "官方API":
+            use_relay, use_online = False, True
+        else:  # 本地Qwen
+            use_relay, use_online = False, False
+
+        # 只有真正走中转时才把 key 透传下去，避免误用
+        out_key = key if use_relay else ""
+        out_base = (relay_base_url or "").strip().rstrip("/") if use_relay else ""
+        out_model = (relay_model or "").strip() if use_relay else ""
+
+        where = "中转站(%s)" % (out_base or "-") if use_relay else ("官方API(comfy.org)" if use_online else "本地Qwen2.1")
+        print(f"[RelayChannelRouter] mode={mode} 有key={has_key} -> 走 {where}")
+
+        return (use_online, use_relay, out_key, out_base, out_model)
+
+
+NODE_CLASS_MAPPINGS["RelayChannelRouter"] = RelayChannelRouter
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
