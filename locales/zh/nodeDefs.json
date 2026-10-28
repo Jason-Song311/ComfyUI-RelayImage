@@ -1,0 +1,135 @@
+{
+  "RelayImageNode": {
+    "display_name": "Relay 图像（API网站 / 官方 API）",
+    "inputs": {
+      "prompt": {
+        "name": "提示词",
+        "tooltip": "用文字描述要生成的画面或要做的修改。把约束、风格、细节都写进去。"
+      },
+      "model": {
+        "name": "模型",
+        "tooltip": "模型名（下拉选择，与官方节点同款）。要加模型改 nodes.py 里的 MODEL_CHOICES。"
+      },
+      "seed": {
+        "name": "随机种",
+        "tooltip": "固定值时会尽量复现同一结果，但不保证完全确定；换模型或改参数仍会变。"
+      },
+      "control_after_generate": {
+        "name": "生成后控制",
+        "tooltip": "每次执行后随机种怎么变：随机 / 递增 / 递减 / 固定。"
+      },
+      "aspect_ratio": {
+        "name": "宽高比",
+        "tooltip": "输出宽高比。自动：跟随输入图比例；没有输入图时通常出 16:9。"
+      },
+      "resolution": {
+        "name": "分辨率",
+        "tooltip": "目标分辨率 1K/2K/4K，按「面积恒定」换算成具体像素（1K≈1024²、2K≈2048²、4K≈4096²）。"
+      },
+      "response_modalities": {
+        "name": "响应模态",
+        "tooltip": "图像：只出图；图像+文本：同时返回模型的文字回复（走 chat 时生效）。"
+      },
+      "system_prompt": {
+        "name": "系统提示词",
+        "tooltip": "决定 AI 行为的基本指令，会作为 system 消息发出去。"
+      },
+      "n": {
+        "name": "数量",
+        "tooltip": "一次要几张。走 chat 路径时上游通常只回 1 张。"
+      },
+      "official_api_key": {
+        "name": "官方Key",
+        "tooltip": "官方 comfy.org 的 API Key —— 从「★ 配置中心」连过来，不用手填。"
+      },
+      "relay_api_key": {
+        "name": "API Key",
+        "tooltip": "API网站令牌 sk-xxx —— 从「★ 配置中心」连过来，不用手填。"
+      },
+      "relay_base_url": {
+        "name": "API网站地址",
+        "tooltip": "API网站地址（要带 /v1）—— 从「★ 配置中心」连过来，不用手填。"
+      },
+      "image": {
+        "name": "参考图",
+        "tooltip": "参考图；传 batch 即为多图（编辑 / 融合）。"
+      },
+      "mask": {
+        "name": "遮罩",
+        "tooltip": "局部重绘掩码，白色区域会被替换。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "图像"
+      },
+      "1": {
+        "name": "信息"
+      }
+    }
+  },
+  "RelayChannelRouter": {
+    "display_name": "Relay 通道路由（配置中心）",
+    "inputs": {
+      "mode": {
+        "name": "通道模式",
+        "tooltip": "自动：填了API网站 key 走API网站、填了官方 key 走官方；也可强制指定。"
+      },
+      "official_api_key": {
+        "name": "官方Key",
+        "tooltip": "ComfyUI 平台 platform.comfy.org 的 API Key —— 走官方通道时用。"
+      },
+      "relay_api_key": {
+        "name": "API Key",
+        "tooltip": "API网站令牌 sk-xxx（如 xianai.cc）—— 走API网站时用。"
+      },
+      "relay_base_url": {
+        "name": "API网站地址",
+        "tooltip": "API网站地址，要带 /v1。"
+      },
+      "model": {
+        "name": "模型",
+        "tooltip": "模型名（下拉选择，与出图节点共用同一份列表）。"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "是否在线"
+      },
+      "1": {
+        "name": "官方Key"
+      },
+      "2": {
+        "name": "API Key"
+      },
+      "3": {
+        "name": "API网站地址"
+      },
+      "4": {
+        "name": "模型"
+      }
+    }
+  },
+  "RelayModelList": {
+    "display_name": "Relay 模型列表（列出网关模型）",
+    "inputs": {
+      "base_url": {
+        "name": "网关地址"
+      },
+      "api_key": {
+        "name": "令牌"
+      },
+      "verify_ssl": {
+        "name": "校验SSL"
+      },
+      "timeout": {
+        "name": "超时(秒)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "模型列表"
+      }
+    }
+  }
+}

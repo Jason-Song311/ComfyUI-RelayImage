@@ -1,0 +1,135 @@
+{
+  "RelayImageNode": {
+    "display_name": "Relay Image (Relay / Official API)",
+    "inputs": {
+      "prompt": {
+        "name": "Prompt",
+        "tooltip": "Text prompt describing the image to generate or the edits to apply. Include any constraints, styles, or details the model should follow."
+      },
+      "model": {
+        "name": "Model",
+        "tooltip": "Model name (dropdown, same as the official node). Add models by editing MODEL_CHOICES in nodes.py."
+      },
+      "seed": {
+        "name": "Seed",
+        "tooltip": "When fixed, the model makes a best effort to reproduce the same result, but deterministic output isn't guaranteed. Changing model or parameters still causes variation."
+      },
+      "control_after_generate": {
+        "name": "Control After Generate",
+        "tooltip": "How the seed changes after each run: randomize / increment / decrement / fixed."
+      },
+      "aspect_ratio": {
+        "name": "Aspect Ratio",
+        "tooltip": "If set to 'auto', matches your input image's aspect ratio; if no image is provided, a 16:9 image is usually generated."
+      },
+      "resolution": {
+        "name": "Resolution",
+        "tooltip": "Target output resolution 1K/2K/4K, converted to concrete pixels by keeping the area constant (1K≈1024², 2K≈2048², 4K≈4096²)."
+      },
+      "response_modalities": {
+        "name": "Response Modalities",
+        "tooltip": "IMAGE for image-only output, IMAGE+TEXT to also return the model's text reply (applies to the chat path)."
+      },
+      "system_prompt": {
+        "name": "System Prompt",
+        "tooltip": "Foundational instructions that dictate the AI's behavior. Sent as a system message."
+      },
+      "n": {
+        "name": "Batch Size",
+        "tooltip": "How many images to request per run. The chat path usually returns just one."
+      },
+      "official_api_key": {
+        "name": "Official Key",
+        "tooltip": "API Key from platform.comfy.org — connect it from the Config Hub node, no need to type it here."
+      },
+      "relay_api_key": {
+        "name": "Relay Key",
+        "tooltip": "Relay gateway token sk-xxx — connect it from the Config Hub node, no need to type it here."
+      },
+      "relay_base_url": {
+        "name": "Relay Base URL",
+        "tooltip": "Relay gateway base URL (must include /v1) — connect it from the Config Hub node, no need to type it here."
+      },
+      "image": {
+        "name": "Image",
+        "tooltip": "Reference image(s). Pass a batch to use multiple images (edit / fusion)."
+      },
+      "mask": {
+        "name": "Mask",
+        "tooltip": "Inpaint mask; the white area gets replaced."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Image"
+      },
+      "1": {
+        "name": "Info"
+      }
+    }
+  },
+  "RelayChannelRouter": {
+    "display_name": "Relay Channel Router (Config Hub)",
+    "inputs": {
+      "mode": {
+        "name": "Channel Mode",
+        "tooltip": "Auto: relay key routes to the relay gateway, official key routes to comfy.org. Can also be forced."
+      },
+      "official_api_key": {
+        "name": "Official Key",
+        "tooltip": "API Key from platform.comfy.org — used when going through the official channel."
+      },
+      "relay_api_key": {
+        "name": "Relay Key",
+        "tooltip": "Relay gateway token sk-xxx (e.g. xianai.cc) — used when going through the relay."
+      },
+      "relay_base_url": {
+        "name": "Relay Base URL",
+        "tooltip": "Relay gateway base URL, must include /v1."
+      },
+      "model": {
+        "name": "Model",
+        "tooltip": "Model name (dropdown, shares the same list as the image node)."
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Use Online"
+      },
+      "1": {
+        "name": "Official Key"
+      },
+      "2": {
+        "name": "Relay Key"
+      },
+      "3": {
+        "name": "Relay Base URL"
+      },
+      "4": {
+        "name": "Model"
+      }
+    }
+  },
+  "RelayModelList": {
+    "display_name": "Relay Model List",
+    "inputs": {
+      "base_url": {
+        "name": "Base URL"
+      },
+      "api_key": {
+        "name": "API Key"
+      },
+      "verify_ssl": {
+        "name": "Verify SSL"
+      },
+      "timeout": {
+        "name": "Timeout (s)"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Models"
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # ComfyUI-RelayImage
 
-在 ComfyUI 里用**你自己中转站**（one-api / new-api / 自建 OpenAI 兼容网关）的 API 出图。
+在 ComfyUI 里用**你自己API网站**（one-api / new-api / 自建 OpenAI 兼容网关）的 API 出图。
 
 ## 为什么需要它
 
@@ -8,7 +8,7 @@ ComfyUI 官方的 `OpenAIGPTImageNodeV2` / `OpenAIGPTImage1` 属于 **partner AP
 
 - 隐藏输入是 `auth_token_comfy_org` / `api_key_comfy_org`
 - **硬编码走 `api.comfy.org` 官方代理**，节点上**没有 `base_url` 字段**
-- 所以无法指向自建中转站，也只能用 comfy.org 的余额计费
+- 所以无法指向自建API网站，也只能用 comfy.org 的余额计费
 
 本节点补上这个缺口：只要你有一个 OpenAI 兼容的图像接口，就能在 ComfyUI 里直接调用。
 
@@ -16,7 +16,7 @@ ComfyUI 官方的 `OpenAIGPTImageNodeV2` / `OpenAIGPTImage1` 属于 **partner AP
 
 ```bash
 cd ComfyUI/custom_nodes
-git clone https://github.com/<你的账号>/ComfyUI-RelayImage.git
+git clone https://github.com/Jason-Song311/ComfyUI-RelayImage.git
 # 重启 ComfyUI
 ```
 
@@ -25,12 +25,12 @@ git clone https://github.com/<你的账号>/ComfyUI-RelayImage.git
 
 ## 节点
 
-### Relay Image（中转站/自定义 OpenAI 图像接口）
+### Relay Image（API网站/自定义 OpenAI 图像接口）
 
 | 参数 | 说明 |
 |---|---|
-| `base_url` | 中转站根地址，**要带 `/v1`**，如 `http://127.0.0.1:8000/v1` |
-| `api_key` | 中转站令牌，如 `sk-relay-xxxxxx` |
+| `base_url` | API网站根地址，**要带 `/v1`**，如 `http://127.0.0.1:8000/v1` |
+| `api_key` | API网站令牌，如 `sk-relay-xxxxxx` |
 | `model` | 网关支持的模型别名，如 `gpt-image-2` / `nano-banana-2` / `nano-banana-pro` |
 | `prompt` | 提示词 |
 | `api_mode` | `auto` / `generations` / `edits` / `chat`（见下） |
@@ -47,36 +47,7 @@ git clone https://github.com/<你的账号>/ComfyUI-RelayImage.git
 
 ### Relay Model List（列出网关模型）
 
-拉取 `{base_url}/models`，把中转站支持的模型别名打印出来，省得猜模型名。
-
-### Relay 通道路由（填了中转 key 就走中转，否则走官方）
-
-一个节点决定整条工作流走哪条路，**免去手拨开关**：
-
-| 参数 | 说明 |
-|---|---|
-| `mode` | `自动`（默认）/ `中转站` / `官方API` / `本地Qwen` |
-| `relay_api_key` | 中转站令牌。**填了 → 走中转站；留空 → 走官方** |
-| `relay_base_url` | 中转站地址，如 `https://xianai.cc/v1` |
-| `relay_model` | 模型名，如 `gpt-image-2` |
-
-输出（接到开关和 Relay Image 节点上）：
-
-| 输出 | 接到哪 |
-|---|---|
-| `use_online` (BOOLEAN) | 「在线 / 本地」总开关的 `switch` |
-| `use_relay` (BOOLEAN) | 「官方 / 中转站」通道开关的 `switch` |
-| `api_key` / `base_url` / `model` (STRING) | Relay Image 节点的对应输入 |
-
-自动模式的行为：
-
-| 你填的 | 实际走的 |
-|---|---|
-| `relay_api_key` 有值 | 中转站 |
-| `relay_api_key` 留空 | 官方 API |
-
-运行日志会打印 `[RelayChannelRouter] mode=自动 有key=True -> 走 中转站(...)`，方便确认。
-
+拉取 `{base_url}/models`，把API网站支持的模型别名打印出来，省得猜模型名。
 
 ## 三种调用方式
 
@@ -96,7 +67,7 @@ git clone https://github.com/<你的账号>/ComfyUI-RelayImage.git
 - `{"data":[{"image": "..."}]}`
 - chat 风格：从 `choices[0].message.content` 里提取 markdown 图片、直达链接或 `data:image/...;base64,...`
 
-## 用法示例（对接本地中转站）
+## 用法示例（对接本地API网站）
 
 ```
 base_url : http://127.0.0.1:8000/v1
@@ -127,7 +98,7 @@ model    : gpt-image-2
 ## 注意
 
 - `api_key` 会明文保存在工作流 JSON 里。别把带 key 的工作流分享出去；本仓库也不会收集任何信息。
-- 本节点直连你填的 `base_url`，**不经过 comfy.org**，计费按你中转站的价格走。
+- 本节点直连你填的 `base_url`，**不经过 comfy.org**，计费按你API网站的价格走。
 - 多数 OpenAI 兼容网关的 `n>1` 只会返回一张图，多图请改成多次运行或换网关。
 
 ## 许可
